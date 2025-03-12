@@ -5,6 +5,7 @@ import joblib
 import os
 import librosa.display
 import matplotlib.pyplot as plt
+import soundfile as sf
 
 # Load trained models
 try:
@@ -115,6 +116,9 @@ if uploaded_file is not None:
     file_path = "temp_audio.wav"
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
+
+    # Play the uploaded audio
+    st.audio(file_path, format="audio/wav")
 
     # Predict
     predict_audio(file_path)
