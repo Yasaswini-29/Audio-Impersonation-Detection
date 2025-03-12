@@ -27,18 +27,35 @@ def preprocess_audio(audio_path):
 def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
     """Extracts MFCC, Spectrogram, and Spectral Features."""
     audio_data, sr = preprocess_audio(audio_path)
+
     if audio_data is None:
         return None
+
     try:
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
+
+        # Combine features
         features = np.hstack((
-            np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1), np.mean(chroma, axis=1)
+            np.mean(mfccs, axis=1), 
+            np.mean(delta_mfccs, axis=1), 
+            np.mean(chroma, axis=1)
         ))
+
+        # Ensure consistent feature size
+        expected_feature_size = 229  # Ensure this matches your training dataset
+        if features.shape[0] < expected_feature_size:
+            features = np.pad(features, (0, expected_feature_size - features.shape[0]))  # Pad if features are fewer
+        elif features.shape[0] > expected_feature_size:
+            features = features[:expected_feature_size]  # Truncate if too many
+
         return features
-    except:
+
+    except Exception as e:
+        print("Feature extraction error:", str(e))
         return None
+
 
 def predict_audio(file_path):
     """Predicts whether the audio is genuine or fake and visualizes spectrogram."""
