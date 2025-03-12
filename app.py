@@ -5,14 +5,22 @@ import joblib
 import os
 import librosa.display
 import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.svm import SVC
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score
 
 # Load trained models
 model = joblib.load("svm_audio_model_pca_rbf_optimized.pkl")
 scaler = joblib.load("scaler.pkl")
 pca = joblib.load("pca.pkl")
 
-# Define preprocess_audio function
+# Load test dataset to display accuracy
+X_test = joblib.load("X_test.pkl")  # Load test features
+y_test = joblib.load("y_test.pkl")  # Load test labels
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
 def preprocess_audio(audio_path):
     """Loads, removes silence, and normalizes audio length."""
     audio_data, sr = librosa.load(audio_path, sr=None)
@@ -22,23 +30,22 @@ def preprocess_audio(audio_path):
     audio_trimmed = np.concatenate([audio_data[start:end] for start, end in non_silent_intervals])
 
     if audio_trimmed.size == 0:
-        print(f"Error: Empty audio after trimming {audio_path}")
+        st.error(f"Error: Empty audio after trimming {audio_path}")
         return None, None
 
-    # Normalize duration to 5 seconds (arbitrary choice)
-    target_length = 5 * sr  # 5 seconds
+    # Normalize duration to 5 seconds
+    target_length = 5 * sr  
     if len(audio_trimmed) > target_length:
-        audio_trimmed = audio_trimmed[:target_length]  # Truncate
+        audio_trimmed = audio_trimmed[:target_length]  
     else:
-        audio_trimmed = np.pad(audio_trimmed, (0, max(0, target_length - len(audio_trimmed))))  # Pad
+        audio_trimmed = np.pad(audio_trimmed, (0, max(0, target_length - len(audio_trimmed))))  
 
     return audio_trimmed, sr
 
-# Define feature extraction function
 def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
     """Extracts MFCC, Spectrogram, and Spectral Features."""
     audio_data, sr = preprocess_audio(audio_path)
-
+    
     if audio_data is None:
         return None
 
@@ -63,11 +70,28 @@ def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
         st.error(f"Error extracting features: {e}")
         return None
 
-# Define prediction function
+def plot_spectrogram(audio_path):
+    """Plots waveform and spectrogram."""
+    audio_data, sr = librosa.load(audio_path, sr=None)
+    
+    fig, ax = plt.subplots(2, 1, figsize=(8, 5))
+
+    # Waveform
+    ax[0].set_title("Waveform")
+    librosa.display.waveshow(audio_data, sr=sr, ax=ax[0])
+
+    # Spectrogram
+    spec = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data)), ref=np.max)
+    img = librosa.display.specshow(spec, sr=sr, x_axis='time', y_axis='log', cmap='inferno', ax=ax[1])
+    ax[1].set_title("Spectrogram")
+    fig.colorbar(img, ax=ax[1], format="%+2.0f dB")
+
+    st.pyplot(fig)
+
 def predict_audio(file_path):
     """Predicts whether the audio is real or fake and visualizes spectrogram."""
     features = extract_features(file_path)
-    
+
     if features is not None:
         features_scaled = scaler.transform([features])
         features_pca = pca.transform(features_scaled)
@@ -76,70 +100,28 @@ def predict_audio(file_path):
 
         label = "🟢 Genuine" if prediction == 1 else "🔴 Fake"
         confidence_score = max(confidence) * 100
-        
-        return label, confidence_score
+
+        st.success(f"**Prediction:** {label} \n\n**Confidence:** {confidence_score:.2f}%")
+
+        # Display the final model's accuracy
+        st.info(f"**Optimized Model Accuracy:** {accuracy * 100:.2f}%")
+
+        plot_spectrogram(file_path)
     else:
-        return None, None
+        st.error("Error processing the audio file!")
 
 # Streamlit UI
-st.title("🎙️ Audio Impersonation Detection")
+st.title("🔊 Audio Impersonation Detection")
 
-# Upload audio file
-uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3"])
+st.write("Upload an audio file to check whether it is genuine or fake.")
+
+uploaded_file = st.file_uploader("Choose an audio file", type=["wav", "mp3", "ogg"])
 
 if uploaded_file is not None:
-    st.audio(uploaded_file, format="audio/wav")
-
-    # Save uploaded file temporarily
-    file_path = "temp_audio.wav"
+    # Save uploaded file
+    file_path = f"temp_audio.{uploaded_file.name.split('.')[-1]}"
     with open(file_path, "wb") as f:
-        f.write(uploaded_file.read())
+        f.write(uploaded_file.getbuffer())
 
-    # Make prediction
-    label, confidence = predict_audio(file_path)
-
-    if label:
-        st.subheader(f"Prediction: {label}")
-        st.write(f"Confidence: {confidence:.2f}%")
-
-    # Show spectrogram
-    def plot_spectrogram(audio_path):
-        """Plots waveform and spectrogram."""
-        audio_data, sr = librosa.load(audio_path, sr=None)
-        
-        plt.figure(figsize=(10, 5))
-
-        # Waveform
-        plt.subplot(2, 1, 1)
-        librosa.display.waveshow(audio_data, sr=sr)
-        plt.title("Waveform")
-
-        # Spectrogram
-        plt.subplot(2, 1, 2)
-        spec = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data)), ref=np.max)
-        librosa.display.specshow(spec, sr=sr, x_axis='time', y_axis='log', cmap='inferno')
-        plt.title("Spectrogram")
-        plt.colorbar()
-
-        st.pyplot(plt)
-
-    plot_spectrogram(file_path)
-
-# Display model accuracy on test set
-st.subheader("📊 Model Performance")
-
-# Load test set to display accuracy
-if "X_test.npy" in os.listdir() and "y_test.npy" in os.listdir():
-    X_test = np.load("X_test.npy")
-    y_test = np.load("y_test.npy")
-
-    y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred, target_names=["Fake", "Genuine"])
-
-    st.write(f"**Test Set Accuracy:** {accuracy * 100:.2f}%")
-    st.text("Classification Report:")
-    st.text(report)
-else:
-    st.warning("Test data not found. Please run the training script to generate `X_test.npy` and `y_test.npy`.")
-
+    # Predict
+    predict_audio(file_path)
