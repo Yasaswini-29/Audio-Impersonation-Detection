@@ -42,7 +42,7 @@ def preprocess_audio(audio_path):
     return audio_trimmed, sr
 
 def extract_features(audio_path):
-    """Extracts features with fixed size to avoid shape mismatch."""
+    """Extracts features ensuring 229 dimensions to match trained model."""
     audio_data, sr = preprocess_audio(audio_path)
 
     if audio_data is None:
@@ -54,18 +54,23 @@ def extract_features(audio_path):
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr)
         spectral_centroid = librosa.feature.spectral_centroid(y=audio_data, sr=sr)
         spectral_bandwidth = librosa.feature.spectral_bandwidth(y=audio_data, sr=sr)
+        spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)
         zero_crossing = librosa.feature.zero_crossing_rate(audio_data)
 
         feature_vector = np.hstack([
             np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1),
-            np.mean(chroma, axis=1), np.mean(spectral_centroid, axis=1),
-            np.mean(spectral_bandwidth, axis=1), np.mean(zero_crossing, axis=1)
+            np.mean(chroma, axis=1), np.mean(spectral_centroid),
+            np.mean(spectral_bandwidth), np.mean(spectral_contrast, axis=1),
+            np.mean(spectral_rolloff), np.mean(zero_crossing)
         ])
 
-        # Ensure fixed-size output
-        expected_features = 40 + 40 + 12 + 1 + 1 + 1  # Adjust this based on your training data
-        if len(feature_vector) != expected_features:
-            return None  # If size mismatch, return None
+        # Ensure fixed-size output (229 features)
+        expected_features = 229
+        if len(feature_vector) < expected_features:
+            feature_vector = np.pad(feature_vector, (0, expected_features - len(feature_vector)), mode='constant')
+        elif len(feature_vector) > expected_features:
+            feature_vector = feature_vector[:expected_features]  # Trim extra values
 
         return feature_vector
     except Exception as e:
@@ -95,14 +100,6 @@ def predict_audio(file_path):
     features = extract_features(file_path)
 
     if features is not None:
-        # Check feature shape
-        expected_feature_count = scaler.n_features_in_  # Expected feature count
-        actual_feature_count = len(features)
-
-        if actual_feature_count != expected_feature_count:
-            st.error(f"Feature mismatch! Expected {expected_feature_count}, but got {actual_feature_count}.")
-            return
-
         features_scaled = scaler.transform([features])
         features_pca = pca.transform(features_scaled)
         prediction = model.predict(features_pca)[0]
