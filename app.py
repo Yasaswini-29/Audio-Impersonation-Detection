@@ -4,7 +4,6 @@ import librosa
 import joblib
 import librosa.display
 import matplotlib.pyplot as plt
-import os
 
 # Load trained models
 try:
@@ -26,10 +25,10 @@ st.write("Upload an audio file to check if it is **Genuine 🟢 or Fake 🔴**."
 
 uploaded_file = st.file_uploader("Choose an audio file...", type=["wav", "mp3"])
 
-def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=256):
+def extract_features(audio_path, n_mfcc=13, n_fft=2048, hop_length=512):
     """
-    Extracts MFCCs and statistical features, ensuring that the output has exactly 229 features 
-    (matching what was used during model training).
+    Extracts **exactly** 229 features using MFCCs, chroma, mel spectrogram, spectral contrast.
+    The final feature vector contains mean and std values to ensure consistency.
     """
     audio_data, sr = librosa.load(audio_path, sr=None)
 
@@ -38,14 +37,14 @@ def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=256):
         return None
 
     try:
-        # MFCCs (Using 20 instead of 40 to match trained model)
+        # **Extract Features**
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc, n_fft=n_fft, hop_length=hop_length)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
         mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
         spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
 
-        # Ensure exactly 229 features by limiting MFCCs and statistical calculations
+        # **Feature Selection & Summarization (Mean + Std)**
         features = np.hstack((
             np.mean(mfccs, axis=1), np.std(mfccs, axis=1),
             np.mean(delta_mfccs, axis=1), np.std(delta_mfccs, axis=1),
@@ -54,7 +53,7 @@ def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=256):
             np.mean(spectral_contrast, axis=1), np.std(spectral_contrast, axis=1)
         ))
 
-        # Ensure features match the expected input size
+        # **Ensure Correct Feature Size**
         if features.shape[0] != 229:
             st.error(f"Feature extraction mismatch: Got {features.shape[0]} features, expected 229.")
             return None
