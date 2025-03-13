@@ -2,21 +2,18 @@ import streamlit as st
 import numpy as np
 import librosa
 import joblib
+import os
 import librosa.display
 import matplotlib.pyplot as plt
+import soundfile as sf
 
 # Load trained models
 try:
     model = joblib.load("svm_audio_model_pca_rbf_optimized.pkl")
     scaler = joblib.load("scaler.pkl")
     pca = joblib.load("pca.pkl")
-
-    # Extract model accuracy if available
-    accuracy = getattr(model, "best_score_", None)
-    if accuracy:
-        accuracy *= 100  # Convert to percentage
 except FileNotFoundError:
-    st.error("Model files not found! Ensure `svm_audio_model_pca_rbf_optimized.pkl`, `scaler.pkl`, and `pca.pkl` exist.")
+    st.error("Model files not found! Make sure `svm_audio_model_pca_rbf_optimized.pkl`, `scaler.pkl`, and `pca.pkl` exist.")
     st.stop()
 
 # Streamlit UI
@@ -25,80 +22,97 @@ st.write("Upload an audio file to check if it is **Genuine 🟢 or Fake 🔴**."
 
 uploaded_file = st.file_uploader("Choose an audio file...", type=["wav", "mp3"])
 
-def extract_features(audio_path, n_mfcc=13, n_fft=2048, hop_length=512):
-    """
-    Extracts **exactly** 229 features using MFCCs, chroma, mel spectrogram, spectral contrast.
-    The final feature vector contains mean and std values to ensure consistency.
-    """
+def preprocess_audio(audio_path):
+    """Loads and normalizes audio length (No forced duration)."""
     audio_data, sr = librosa.load(audio_path, sr=None)
 
-    if len(audio_data) < hop_length:
-        st.error("Audio is too short for feature extraction!")
+    # Remove silence
+    non_silent_intervals = librosa.effects.split(audio_data, top_db=30)
+    audio_trimmed = np.concatenate([audio_data[start:end] for start, end in non_silent_intervals])
+
+    if audio_trimmed.size == 0:
+        return None, None
+
+    return audio_trimmed, sr  # Keep actual length without forcing 5 sec
+
+def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
+    """Extracts MFCC and other features without forcing a fixed duration."""
+    audio_data, sr = preprocess_audio(audio_path)
+    
+    if audio_data is None:
         return None
 
     try:
-        # **Extract Features**
-        mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc, n_fft=n_fft, hop_length=hop_length)
+        mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
         mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
         spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)
+        zero_crossing = librosa.feature.zero_crossing_rate(audio_data)
 
-        # **Feature Selection & Summarization (Mean + Std)**
+        # Ensure dynamic adaptation to varying audio lengths
         features = np.hstack((
-            np.mean(mfccs, axis=1), np.std(mfccs, axis=1),
-            np.mean(delta_mfccs, axis=1), np.std(delta_mfccs, axis=1),
-            np.mean(chroma, axis=1), np.std(chroma, axis=1),
-            np.mean(mel_spec, axis=1), np.std(mel_spec, axis=1),
-            np.mean(spectral_contrast, axis=1), np.std(spectral_contrast, axis=1)
+            np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1), np.mean(chroma, axis=1),
+            np.mean(mel_spec_db, axis=1), np.mean(spectral_contrast, axis=1),
+            np.mean(spectral_rolloff, axis=1), np.mean(zero_crossing, axis=1)
         ))
-
-        # **Ensure Correct Feature Size**
-        if features.shape[0] != 229:
-            st.error(f"Feature extraction mismatch: Got {features.shape[0]} features, expected 229.")
-            return None
 
         return features
     except Exception as e:
-        st.error(f"Feature extraction error: {e}")
+        st.error(f"Error extracting features: {e}")
         return None
 
+def plot_spectrogram(audio_path):
+    """Plots waveform and spectrogram."""
+    audio_data, sr = librosa.load(audio_path, sr=None)
+    
+    fig, ax = plt.subplots(2, 1, figsize=(8, 6))
+
+    # Waveform
+    librosa.display.waveshow(audio_data, sr=sr, ax=ax[0])
+    ax[0].set_title("Waveform")
+
+    # Spectrogram
+    spec = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data)), ref=np.max)
+    img = librosa.display.specshow(spec, sr=sr, x_axis='time', y_axis='log', cmap='inferno', ax=ax[1])
+    ax[1].set_title("Spectrogram")
+    fig.colorbar(img, ax=ax[1])
+
+    st.pyplot(fig)
+
 def predict_audio(file_path):
-    """Predicts whether the audio is real or fake."""
+    """Predicts whether the audio is real or fake dynamically."""
     features = extract_features(file_path)
-
-    if features is None:
-        st.error("Feature extraction failed. Ensure audio is at least 1 second long.")
-        return
-
-    features = np.array(features).reshape(1, -1)  
-
-    # Apply PCA & SVM Model
-    try:
-        features_scaled = scaler.transform(features)
+    
+    if features is not None:
+        features_scaled = scaler.transform([features])
         features_pca = pca.transform(features_scaled)
         prediction = model.predict(features_pca)[0]
-        confidence = model.predict_proba(features_pca)[0]
+        
+        try:
+            confidence = model.predict_proba(features_pca)[0]
+            confidence_score = max(confidence) * 100
+        except AttributeError:
+            confidence_score = "N/A (SVM without probability output)"
 
         label = "🟢 Genuine" if prediction == 1 else "🔴 Fake"
-        confidence_score = max(confidence) * 100
 
-        st.success(f"**Prediction:** {label} | **Confidence:** {confidence_score:.2f}%")
+        st.success(f"**Prediction:** {label} | **Confidence:** {confidence_score} %")
         
-        if accuracy:
-            st.write(f"✅ **Optimized Model Accuracy:** {accuracy:.2f}%")
-        else:
-            st.write("⚠️ **Model accuracy could not be retrieved.** Ensure it is available in the trained model.")
-
-    except ValueError as e:
-        st.error(f"Prediction error: {e}")
-    except Exception as e:
-        st.error(f"Unexpected error: {e}")
+        plot_spectrogram(file_path)
+    else:
+        st.error("Error processing the audio file!")
 
 if uploaded_file is not None:
+    # Save the uploaded file
     file_path = "temp_audio.wav"
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
+    # Play the uploaded audio
     st.audio(file_path, format="audio/wav")
+
+    # Predict
     predict_audio(file_path)
