@@ -12,7 +12,7 @@ try:
     scaler = joblib.load("scaler.pkl")
     pca = joblib.load("pca.pkl")
 
-    # Extract accuracy only if it's available
+    # Extract model accuracy if available
     accuracy = getattr(model, "best_score_", None)
     if accuracy:
         accuracy *= 100  # Convert to percentage
@@ -26,8 +26,11 @@ st.write("Upload an audio file to check if it is **Genuine 🟢 or Fake 🔴**."
 
 uploaded_file = st.file_uploader("Choose an audio file...", type=["wav", "mp3"])
 
-def extract_features(audio_path, n_mfcc=40, n_fft=1024, hop_length=256):
-    """Extracts MFCCs and statistical features, making it robust to varying lengths."""
+def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=256):
+    """
+    Extracts MFCCs and statistical features, ensuring that the output has exactly 229 features 
+    (matching what was used during model training).
+    """
     audio_data, sr = librosa.load(audio_path, sr=None)
 
     if len(audio_data) < hop_length:
@@ -35,13 +38,14 @@ def extract_features(audio_path, n_mfcc=40, n_fft=1024, hop_length=256):
         return None
 
     try:
+        # MFCCs (Using 20 instead of 40 to match trained model)
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc, n_fft=n_fft, hop_length=hop_length)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
         mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
         spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
 
-        # Extract statistics (mean & std) for consistency across audio lengths
+        # Ensure exactly 229 features by limiting MFCCs and statistical calculations
         features = np.hstack((
             np.mean(mfccs, axis=1), np.std(mfccs, axis=1),
             np.mean(delta_mfccs, axis=1), np.std(delta_mfccs, axis=1),
@@ -49,6 +53,11 @@ def extract_features(audio_path, n_mfcc=40, n_fft=1024, hop_length=256):
             np.mean(mel_spec, axis=1), np.std(mel_spec, axis=1),
             np.mean(spectral_contrast, axis=1), np.std(spectral_contrast, axis=1)
         ))
+
+        # Ensure features match the expected input size
+        if features.shape[0] != 229:
+            st.error(f"Feature extraction mismatch: Got {features.shape[0]} features, expected 229.")
+            return None
 
         return features
     except Exception as e:
@@ -66,20 +75,26 @@ def predict_audio(file_path):
     features = np.array(features).reshape(1, -1)  
 
     # Apply PCA & SVM Model
-    features_scaled = scaler.transform(features)
-    features_pca = pca.transform(features_scaled)
-    prediction = model.predict(features_pca)[0]
-    confidence = model.predict_proba(features_pca)[0]
+    try:
+        features_scaled = scaler.transform(features)
+        features_pca = pca.transform(features_scaled)
+        prediction = model.predict(features_pca)[0]
+        confidence = model.predict_proba(features_pca)[0]
 
-    label = "🟢 Genuine" if prediction == 1 else "🔴 Fake"
-    confidence_score = max(confidence) * 100
+        label = "🟢 Genuine" if prediction == 1 else "🔴 Fake"
+        confidence_score = max(confidence) * 100
 
-    st.success(f"**Prediction:** {label} | **Confidence:** {confidence_score:.2f}%")
-    
-    if accuracy:
-        st.write(f"✅ **Optimized Model Accuracy:** {accuracy:.2f}%")
-    else:
-        st.write("⚠️ **Model accuracy could not be retrieved.** Ensure it is available in the trained model.")
+        st.success(f"**Prediction:** {label} | **Confidence:** {confidence_score:.2f}%")
+        
+        if accuracy:
+            st.write(f"✅ **Optimized Model Accuracy:** {accuracy:.2f}%")
+        else:
+            st.write("⚠️ **Model accuracy could not be retrieved.** Ensure it is available in the trained model.")
+
+    except ValueError as e:
+        st.error(f"Prediction error: {e}")
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
 
 if uploaded_file is not None:
     file_path = "temp_audio.wav"
