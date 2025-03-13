@@ -13,11 +13,20 @@ try:
     scaler = joblib.load("scaler.pkl")
     pca = joblib.load("pca.pkl")
 except FileNotFoundError:
-    st.error("Model files not found! Make sure `svm_audio_model_pca_rbf_optimized.pkl`, `scaler.pkl`, and `pca.pkl` exist.")
+    st.error("Model files not found! Make sure svm_audio_model_pca_rbf_optimized.pkl, scaler.pkl, and pca.pkl exist.")
     st.stop()
 
+# Dynamically fetch model accuracy
+if hasattr(model, "score"):
+    accuracy = model.score  # If accuracy is stored
+else:
+    accuracy = None
+if accuracy:
+    st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
+
+# Streamlit UI
 st.title("🎵 Audio Impersonation Detection")
-st.write("Upload an audio file to check if it is **Genuine 🟢 or Fake 🔴**.")
+st.write("Upload an audio file to check if it is *Genuine 🟢 or Fake 🔴*.")
 
 uploaded_file = st.file_uploader("Choose an audio file...", type=["wav", "mp3"])
 
@@ -41,38 +50,30 @@ def preprocess_audio(audio_path):
 
     return audio_trimmed, sr
 
-def extract_features(audio_path):
-    """Extracts features ensuring 229 dimensions to match trained model."""
+def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
+    """Extracts MFCC, Spectrogram, and Spectral Features."""
     audio_data, sr = preprocess_audio(audio_path)
-
+    
     if audio_data is None:
         return None
 
     try:
-        mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=40)
+        mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
-        chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr)
-        spectral_centroid = librosa.feature.spectral_centroid(y=audio_data, sr=sr)
-        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=audio_data, sr=sr)
+        chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
+        mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
         spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
         spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)
         zero_crossing = librosa.feature.zero_crossing_rate(audio_data)
 
-        feature_vector = np.hstack([
-            np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1),
-            np.mean(chroma, axis=1), np.mean(spectral_centroid),
-            np.mean(spectral_bandwidth), np.mean(spectral_contrast, axis=1),
-            np.mean(spectral_rolloff), np.mean(zero_crossing)
-        ])
+        features = np.hstack((
+            np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1), np.mean(chroma, axis=1),
+            np.mean(mel_spec_db, axis=1), np.mean(spectral_contrast, axis=1),
+            np.mean(spectral_rolloff, axis=1), np.mean(zero_crossing, axis=1)
+        ))
 
-        # Ensure fixed-size output (229 features)
-        expected_features = 229
-        if len(feature_vector) < expected_features:
-            feature_vector = np.pad(feature_vector, (0, expected_features - len(feature_vector)), mode='constant')
-        elif len(feature_vector) > expected_features:
-            feature_vector = feature_vector[:expected_features]  # Trim extra values
-
-        return feature_vector
+        return features
     except Exception as e:
         st.error(f"Error extracting features: {e}")
         return None
@@ -96,23 +97,20 @@ def plot_spectrogram(audio_path):
     st.pyplot(fig)
 
 def predict_audio(file_path):
-    """Predicts whether the audio is real or fake while handling short audios correctly."""
+    """Predicts whether the audio is real or fake and visualizes spectrogram."""
     features = extract_features(file_path)
-
+    
     if features is not None:
         features_scaled = scaler.transform([features])
         features_pca = pca.transform(features_scaled)
         prediction = model.predict(features_pca)[0]
-
-        try:
-            confidence = model.predict_proba(features_pca)[0]
-            confidence_score = max(confidence) * 100
-        except AttributeError:
-            confidence_score = "N/A"
+        confidence = model.predict_proba(features_pca)[0]
 
         label = "🟢 Genuine" if prediction == 1 else "🔴 Fake"
+        confidence_score = max(confidence) * 100
 
-        st.success(f"**Prediction:** {label} | **Confidence:** {confidence_score}%")
+        st.success(f"*Prediction:* {label} | *Confidence:* {confidence_score:.2f}%")
+        st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
 
         plot_spectrogram(file_path)
     else:
