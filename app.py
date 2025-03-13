@@ -16,13 +16,10 @@ except FileNotFoundError:
     st.error("Model files not found! Make sure svm_audio_model_pca_rbf_optimized.pkl, scaler.pkl, and pca.pkl exist.")
     st.stop()
 
-# Dynamically fetch model accuracy
-if hasattr(model, "score"):
-    accuracy = model.score  # If accuracy is stored
-else:
-    accuracy = None
-if accuracy:
-    st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
+# Dynamically fetch model accuracy if available
+accuracy = None
+if hasattr(model, "score_"):
+    accuracy = model.score_
 
 # Streamlit UI
 st.title("🎵 Audio Impersonation Detection")
@@ -110,7 +107,10 @@ def predict_audio(file_path):
         confidence_score = max(confidence) * 100
 
         st.success(f"*Prediction:* {label} | *Confidence:* {confidence_score:.2f}%")
-        st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
+
+        # Display accuracy if available
+        if accuracy:
+            st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
 
         plot_spectrogram(file_path)
     else:
