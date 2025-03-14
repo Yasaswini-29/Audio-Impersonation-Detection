@@ -102,7 +102,7 @@ def plot_spectrogram(audio_path):
     st.pyplot(plt)
 
 def main():
-    st.title("Audio Impersonation Detection")
+    st.title("🎵 Audio Impersonation Detection")
 
     st.markdown("""
     This application detects whether an audio file is genuine or fake based on an SVM model trained with MFCC, 
