@@ -102,7 +102,6 @@ def predict_audio(file_path):
         confidence_score = max(confidence) * 100
 
         st.success(f"*Prediction:* {label} | *Confidence:* {confidence_score:.2f}%")
-        st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
 
         plot_spectrogram(file_path)
     else:
