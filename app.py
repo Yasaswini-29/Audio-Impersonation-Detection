@@ -33,8 +33,8 @@ def preprocess_audio(audio_path):
     if audio_trimmed.size == 0:
         return None, None
 
-    # Normalize duration to 5 seconds (if shorter, pad with zeros)
-    target_length = 5 * sr
+    # Normalize duration to 2 seconds (if shorter, pad with zeros)
+    target_length = 2 * sr
     if len(audio_trimmed) > target_length:
         audio_trimmed = audio_trimmed[:target_length]
     else:
