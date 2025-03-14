@@ -33,13 +33,12 @@ def preprocess_audio(audio_path):
     if audio_trimmed.size == 0:
         return None, None
 
-    # Handle very short clips (like 2 seconds)
-    target_length = 5 * sr  # Target length is 5 seconds
-    if len(audio_trimmed) < target_length:
-        # Pad the audio with silence if it's less than 5 seconds
-        audio_trimmed = np.pad(audio_trimmed, (0, max(0, target_length - len(audio_trimmed))))
-    else:
+    # Normalize duration to 5 seconds
+    target_length = 5 * sr
+    if len(audio_trimmed) > target_length:
         audio_trimmed = audio_trimmed[:target_length]
+    else:
+        audio_trimmed = np.pad(audio_trimmed, (0, max(0, target_length - len(audio_trimmed))))
 
     return audio_trimmed, sr
 
@@ -51,7 +50,6 @@ def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
         return None
 
     try:
-        # Extract various features from audio
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
@@ -61,7 +59,6 @@ def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
         spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)
         zero_crossing = librosa.feature.zero_crossing_rate(audio_data)
 
-        # Combine all features into one array
         features = np.hstack((
             np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1), np.mean(chroma, axis=1),
             np.mean(mel_spec_db, axis=1), np.mean(spectral_contrast, axis=1),
@@ -79,11 +76,11 @@ def plot_spectrogram(audio_path):
     
     fig, ax = plt.subplots(2, 1, figsize=(8, 6))
 
-    # Plot waveform
+    # Waveform
     librosa.display.waveshow(audio_data, sr=sr, ax=ax[0])
     ax[0].set_title("Waveform")
 
-    # Plot spectrogram
+    # Spectrogram
     spec = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data)), ref=np.max)
     img = librosa.display.specshow(spec, sr=sr, x_axis='time', y_axis='log', cmap='inferno', ax=ax[1])
     ax[1].set_title("Spectrogram")
@@ -105,6 +102,7 @@ def predict_audio(file_path):
         confidence_score = max(confidence) * 100
 
         st.success(f"*Prediction:* {label} | *Confidence:* {confidence_score:.2f}%")
+        st.write(f"✅ *Optimized Model Accuracy:* {accuracy:.2f}%")
 
         plot_spectrogram(file_path)
     else:
