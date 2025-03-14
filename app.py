@@ -43,7 +43,7 @@ def preprocess_audio(audio_path):
 
     return audio_trimmed, sr
 
-def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=512):
+def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
     """Extracts MFCC, Spectrogram, and Spectral Features."""
     audio_data, sr = preprocess_audio(audio_path)
     
@@ -51,7 +51,7 @@ def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=512):
         return None
 
     try:
-        # Extract features
+        # Extract various features from audio
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
@@ -61,7 +61,7 @@ def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=512):
         spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)
         zero_crossing = librosa.feature.zero_crossing_rate(audio_data)
 
-        # Combine features into a single array
+        # Combine all features into one array
         features = np.hstack((
             np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1), np.mean(chroma, axis=1),
             np.mean(mel_spec_db, axis=1), np.mean(spectral_contrast, axis=1),
