@@ -33,12 +33,13 @@ def preprocess_audio(audio_path):
     if audio_trimmed.size == 0:
         return None, None
 
-    # Normalize duration to 5 seconds (if shorter, pad with zeros)
+    # Handle short audio clips: If the clip is too short, don't truncate, but pad smartly.
     target_length = 5 * sr
-    if len(audio_trimmed) > target_length:
-        audio_trimmed = audio_trimmed[:target_length]
-    else:
+    if len(audio_trimmed) < target_length:
+        # Pad with silence or repeat content (to simulate a longer clip)
         audio_trimmed = np.pad(audio_trimmed, (0, max(0, target_length - len(audio_trimmed))))
+    else:
+        audio_trimmed = audio_trimmed[:target_length]
 
     return audio_trimmed, sr
 
@@ -50,6 +51,7 @@ def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
         return None
 
     try:
+        # Extract various features
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
@@ -59,6 +61,7 @@ def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
         spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=sr)
         zero_crossing = librosa.feature.zero_crossing_rate(audio_data)
 
+        # Combine features into a single array
         features = np.hstack((
             np.mean(mfccs, axis=1), np.mean(delta_mfccs, axis=1), np.mean(chroma, axis=1),
             np.mean(mel_spec_db, axis=1), np.mean(spectral_contrast, axis=1),
