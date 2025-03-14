@@ -105,8 +105,7 @@ def main():
     st.title("🎵 Audio Impersonation Detection")
 
     st.markdown("""
-    This application detects whether an audio file is genuine or fake based on an SVM model trained with MFCC, 
-    Spectrogram, and Spectral Features.
+    Upload an audio file to check if it is 🟢Genuine or 🔴Fake
     """)
 
     # File uploader
