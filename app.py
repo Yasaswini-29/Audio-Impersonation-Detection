@@ -33,17 +33,17 @@ def preprocess_audio(audio_path):
     if audio_trimmed.size == 0:
         return None, None
 
-    # Handle short audio clips: If the clip is too short, don't truncate, but pad smartly.
-    target_length = 5 * sr
+    # Handle very short clips (like 2 seconds)
+    target_length = 5 * sr  # Target length is 5 seconds
     if len(audio_trimmed) < target_length:
-        # Pad with silence or repeat content (to simulate a longer clip)
+        # Pad the audio with silence if it's less than 5 seconds
         audio_trimmed = np.pad(audio_trimmed, (0, max(0, target_length - len(audio_trimmed))))
     else:
         audio_trimmed = audio_trimmed[:target_length]
 
     return audio_trimmed, sr
 
-def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
+def extract_features(audio_path, n_mfcc=20, n_fft=1024, hop_length=512):
     """Extracts MFCC, Spectrogram, and Spectral Features."""
     audio_data, sr = preprocess_audio(audio_path)
     
@@ -51,7 +51,7 @@ def extract_features(audio_path, n_mfcc=40, n_fft=2048, hop_length=512):
         return None
 
     try:
-        # Extract various features
+        # Extract features
         mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=n_mfcc)
         delta_mfccs = librosa.feature.delta(mfccs)
         chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_fft=n_fft, hop_length=hop_length)
@@ -79,11 +79,11 @@ def plot_spectrogram(audio_path):
     
     fig, ax = plt.subplots(2, 1, figsize=(8, 6))
 
-    # Waveform
+    # Plot waveform
     librosa.display.waveshow(audio_data, sr=sr, ax=ax[0])
     ax[0].set_title("Waveform")
 
-    # Spectrogram
+    # Plot spectrogram
     spec = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data)), ref=np.max)
     img = librosa.display.specshow(spec, sr=sr, x_axis='time', y_axis='log', cmap='inferno', ax=ax[1])
     ax[1].set_title("Spectrogram")
