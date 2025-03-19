@@ -14,11 +14,11 @@ model = joblib.load("svm_audio_model_pca_rbf_optimized.pkl")
 # Feature extraction function
 def extract_features(audio_path, n_mfcc=100, n_fft=2048, hop_length=512):
     try:
-        # Use audioread backend explicitly
-        audio_data, sr = librosa.load(audio_path, sr=None, backend="audioread")
+        # Load audio (Removing 'backend' argument)
+        audio_data, sr = librosa.load(audio_path, sr=None)
 
         if audio_data.size == 0:
-            st.error("Error: Empty audio file.")
+            print("Error: Empty audio file.")
             return None
 
         # Extract features
@@ -39,16 +39,11 @@ def extract_features(audio_path, n_mfcc=100, n_fft=2048, hop_length=512):
             np.mean(spectral_rolloff, axis=1), np.mean(zero_crossing, axis=1), spec_mean
         ))
 
-        # Ensure features have correct shape
-        expected_dim = scaler.mean_.shape[0]
-        if len(features) != expected_dim:
-            st.warning(f"Feature dimension mismatch! Expected {expected_dim}, got {len(features)}")
-            return None
-
         return features
     except Exception as e:
-        st.error(f"Error processing audio: {e}")
+        print(f"Error processing audio: {e}")
         return None
+
 
 # Function to plot spectrogram
 def plot_spectrogram(audio_path):
